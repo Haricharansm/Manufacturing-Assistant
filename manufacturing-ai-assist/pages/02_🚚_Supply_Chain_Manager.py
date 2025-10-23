@@ -1,6 +1,10 @@
 
 import streamlit as st, os, requests, pandas as pd
 from utils import api as simapi
+# pages/02_🚚_Supply_Chain_Manager.py
+from utils.ui import show_logo
+# …
+show_logo(width=180)
 
 st.image('assets/saxon_logo.png', width=180)
 st.title("Supply Chain — Inbound")
