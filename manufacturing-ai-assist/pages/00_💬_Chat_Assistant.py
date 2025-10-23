@@ -175,11 +175,17 @@ else:
         msg = plant_qa_fast_track("SKU-19") if not simapi.api_up() else simapi.post_action("QA fast-track")
         assistant(msg); add_task("Plant Manager", "Quality", "QA fast-track")
 
-# Chat input (unchanged, plus Sales NL triggers already in your previous version)
+# ---------------- Natural-language triggers ----------------
+def _int_in(text, default=None):
+    m = re.search(r"\b(\d{1,5})\b", text)
+    return int(m.group(1)) if m else default
+
 prompt = st.chat_input("Type a message")
 if prompt:
     user(prompt)
     low = prompt.lower()
+
+    # KPIs
     if "kpi" in low or "brief" in low or "status" in low:
         if simapi.api_up():
             m = simapi.get_metrics() or {}
@@ -201,8 +207,10 @@ if prompt:
                 f"Downtime {k['downtime_hours']:.1f}h, "
                 f"Inventory risks {k['inventory_risk_count']}."
             )
+
+    # ------- Sales NL -------
     elif low.startswith("quote") or "quote for" in low:
-        m = re.search(r"quote.*?([A-Z0-9-]{5,})[^0-9]*?(\d+)", low)
+        m = re.search(r"quote.*?([a-z0-9-]{5,})[^0-9]*?(\d+)", low, re.I)
         if m:
             assy, qty = m.group(1).upper(), int(m.group(2))
             try:
@@ -219,6 +227,42 @@ if prompt:
     elif "propose" in low or "suggest product" in low or "cross sell" in low:
         assistant(propose_new_product("ASSY-100"))
         add_task("Sales AE", "Propose", "Cross-sell for ASSY-100")
+
+    # ------- Supply Chain NL -------
+    elif "expedite po" in low or "expedite" in low and "po" in low:
+        sku = (re.search(r"(sku[- ]?\d+)", low) or re.search(r"(assy[- ]?\d+)", low) or re.search(r"(comp[- ]?\d+)", low))
+        sku = sku.group(1).upper() if sku else "SKU-19"
+        days = _int_in(low, default=2)
+        msg = sc_expedite_po(sku=sku, days_pull=days)
+        assistant(msg); add_task("Supply Chain Manager", "PO", "Expedited PO", f"{sku}, ETA -{days}d")
+    elif "alternate supplier" in low or "alt supplier" in low:
+        sku = (re.search(r"(sku[- ]?\d+)", low) or re.search(r"(assy[- ]?\d+)", low))
+        sku = sku.group(1).upper() if sku else "SKU-19"
+        qty = _int_in(low, default=500)
+        msg = sc_alternate_supplier(sku=sku, qty=qty)
+        assistant(msg); add_task("Supply Chain Manager", "Supplier", "Alternate supplier", f"{sku}, {qty} pcs")
+    elif "upgrade carrier" in low or ("carrier" in low and "air" in low):
+        msg = sc_upgrade_carrier()
+        assistant(msg); add_task("Supply Chain Manager", "Logistics", "Upgrade carrier to air")
+
+    # ------- Plant NL -------
+    elif "re-sequence" in low or "resequence" in low:
+        line = (re.search(r"(l\d)", low) or re.search(r"line[- ]?(l?\d)", low))
+        line = line.group(1).upper() if line else "L2"
+        msg = plant_resequence(line)
+        assistant(msg); add_task("Plant Manager", "Scheduling", f"Re-sequenced {line}")
+    elif "batch changeover" in low or "batch changeovers" in low:
+        line = (re.search(r"(l\d)", low) or re.search(r"line[- ]?(l?\d)", low))
+        line = line.group(1).upper() if line else "L2"
+        msg = plant_batch_changeovers(line)
+        assistant(msg); add_task("Plant Manager", "Ops", f"Batched changeovers {line}")
+    elif "qa fast" in low or "fast-track" in low or "fast track" in low:
+        sku = (re.search(r"(sku[- ]?\d+)", low) or re.search(r"(assy[- ]?\d+)", low))
+        sku = sku.group(1).upper() if sku else "SKU-19"
+        msg = plant_qa_fast_track(sku)
+        assistant(msg); add_task("Plant Manager", "Quality", "QA fast-track", sku)
+
     else:
         assistant("Acknowledged.")
+
     st.experimental_rerun()
