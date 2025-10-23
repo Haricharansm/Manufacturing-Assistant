@@ -1,3 +1,7 @@
+# pages/03_💼_Sales_AE.py
+from utils.ui import show_logo
+# …
+show_logo(width=180)
 
 import streamlit as st, os, requests, pandas as pd
 st.image('assets/saxon_logo.png', width=180)
