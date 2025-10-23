@@ -3,6 +3,10 @@ import streamlit as st
 from utils.data import load_all_data
 from utils.kpis import compute_kpis
 from utils import api as simapi
+# pages/01_🌿_Plant_Manager.py
+from utils.ui import show_logo
+# …
+show_logo(width=180)
 
 st.image('assets/saxon_logo.png', width=180)
 st.title("Plant Manager — Production")
