@@ -1,0 +1,7 @@
+assembly,part,desc,qty_per,unit_cost,std_cost,lead_time_days
+ASSY-100,COMP-19,Core component,1,42.50,3.2,5
+ASSY-100,FAST-08,Fasteners set,6,0.12,0.4,2
+ASSY-100,PK-1,Packaging,1,0.35,0.1,1
+ASSY-200,COMP-22,Alternate core,1,38.90,3.0,4
+ASSY-200,FAST-08,Fasteners set,6,0.12,0.4,2
+ASSY-200,PK-1,Packaging,1,0.35,0.1,1
