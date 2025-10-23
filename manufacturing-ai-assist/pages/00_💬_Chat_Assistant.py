@@ -4,6 +4,10 @@ from pathlib import Path
 from utils import api as simapi
 from utils.data import load_all_data
 from utils.kpis import compute_kpis
+# pages/00_💬_Chat_Assistant.py
+from utils.ui import show_logo
+# …
+show_logo(width=170)
 
 st.set_page_config(page_title="Chat Assistant", page_icon="💬", layout="wide")
 st.image("assets/saxon_logo.png", width=170)
