@@ -28,7 +28,6 @@ def price_from_bom(assembly: str, qty: int, margin_pct: float = 22.0) -> dict:
     items = bom[bom["assembly"] == assembly].copy()
     if items.empty:
         raise ValueError(f"BOM not found for '{assembly}'")
-    # roll-up material + std cost (labor/oh are packed in 'std_cost')
     items["extended"] = items["qty_per"] * qty * items["unit_cost"]
     material_cost = float(items["extended"].sum())
     std_cost = float(items["std_cost"].sum() * qty)
@@ -86,7 +85,6 @@ def follow_up_email(prospect: str, quote_id: str, tone: str = "crisp") -> str:
     )
 
 def propose_new_product(assembly: str) -> str:
-    # naive: look for other items in same family and suggest a sibling
     p = load_products()
     row = p[p["sku"] == assembly]
     if row.empty:
