@@ -265,4 +265,4 @@ if prompt:
     else:
         assistant("Acknowledged.")
 
-    st.experimental_rerun()
+    st.rerun()
