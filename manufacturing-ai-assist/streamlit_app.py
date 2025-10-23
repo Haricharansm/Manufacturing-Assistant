@@ -5,6 +5,10 @@ from utils.kpis import compute_kpis
 from utils.charts import kpi_row
 from utils.ai import draft_brief
 from utils import api as simapi
+# streamlit_app.py  (top of file)
+from utils.ui import show_logo
+# …
+show_logo(width=170)
 
 st.set_page_config(page_title="Manufacturing AI Assist", page_icon="🏭", layout="wide")
 
