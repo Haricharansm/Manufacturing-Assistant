@@ -1,37 +1,42 @@
 {
   "id": "sku19_supply_risk",
-  "title": "SKU-19: Supplier delay \u2192 mitigate \u2192 stabilize",
-  "summary": "Inbound delay on a critical component increases OTD risk. Sales initiates, Supply Chain mitigates, Plant stabilizes.",
+  "title": "SKU-19: Supplier delay → mitigate → stabilize",
+  "summary": "Sales opens; Supply Chain mitigates inbound risk; Plant stabilizes throughput.",
   "events": [
     {
       "t": "T-3d",
       "dept": "Sales",
-      "msg": "Customer requests single-lot quote with tight ship window.",
-      "impact": "Check promise date."
+      "msg": "Customer requests single-lot quote for ASSY-100 qty 25.",
+      "action": "sales_quote",
+      "params": {"assembly": "ASSY-100", "qty": 25, "prospect": "ACME Mfg"}
     },
     {
       "t": "T-3d",
       "dept": "Supply Chain",
-      "msg": "ASN shows Supplier Z delay of 4 days.",
-      "impact": "Potential shortfall on C-19."
+      "msg": "ASN shows Supplier Z delay of 4 days on component C-19.",
+      "action": "sc_expedite_po",
+      "params": {}
     },
     {
       "t": "T-2d",
       "dept": "Plant",
-      "msg": "Projected -18% throughput on L2 without C-19.",
-      "impact": "OTD risk increases."
+      "msg": "Planner projects -18% throughput on L2 without C-19.",
+      "action": "plant_resequence",
+      "params": {"line": "L2"}
     },
     {
       "t": "T-1d",
       "dept": "Supply Chain",
-      "msg": "Expedite PO + alternate supplier; upgrade to air.",
-      "impact": "Shortfall window shrinks."
+      "msg": "Alternate supplier Y has 500 pcs available; upgrade to air.",
+      "action": "sc_alternate_supplier",
+      "params": {"qty": 500}
     },
     {
       "t": "T+0",
       "dept": "Plant",
-      "msg": "Re-sequence L2, batch changeovers; QA fast-track.",
-      "impact": "Throughput and OTD stabilize."
+      "msg": "QA to fast-track incoming alternate lot; batch changeovers.",
+      "action": "plant_qa_fast_track",
+      "params": {"sku": "SKU-19"}
     }
   ]
 }
