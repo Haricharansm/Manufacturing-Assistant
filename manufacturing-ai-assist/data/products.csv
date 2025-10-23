@@ -1,0 +1,5 @@
+sku,desc,family,recent_demand
+ASSY-100,Assembly 100 (standard),Rotor,820
+ASSY-150,Assembly 150 (extended),Rotor,540
+ASSY-200,Assembly 200 (lightweight),Rotor,390
+KIT-300,Service kit 300,Aftermarket,270
