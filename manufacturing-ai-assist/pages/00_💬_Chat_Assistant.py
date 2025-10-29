@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 import streamlit as st
-import json, os, pandas as pd, requests, re
+import json, os, re
 from pathlib import Path
 from datetime import datetime
 
@@ -20,17 +20,31 @@ from utils.ops_offline import (
 st.set_page_config(page_title="Chat Assistant", page_icon="💬", layout="wide")
 
 # ---------------------------------------------------------------------
-# Header (Saxon brand) – logo + greeting + compact subtitle
+# Header (Saxon brand) – logo + greeting + subtitle
 # ---------------------------------------------------------------------
 show_logo(width=170)
+
+# Optional TZ selector so greeting reflects the viewer’s local time (stored once in session)
+with st.sidebar.expander("Preferences", expanded=False):
+    tz = st.selectbox(
+        "Time zone",
+        ["America/Chicago", "America/New_York", "Europe/London", "Asia/Kolkata", "UTC"],
+        key="user_tz"
+    )
 greeting(name=os.environ.get("SAXON_USER_NAME", "there"), right_badge="Manufacturing AI Assist")
 header("Conversation", "Chat-first copilot for Sales • Supply Chain • Plant")
 
-# KPI chips (static sample; can be computed if API is on)
-chips_row([("On-time ↑", "success"), ("Inventory risks: 3", "warn"), ("Downtime 1.2h", "neutral")])
-
+# Personas
 PERSONAS = ["Sales AE", "Supply Chain Manager", "Plant Manager"]
 persona = st.sidebar.radio("Persona", PERSONAS, index=0)
+
+# Persona chips (simple offline examples)
+if persona == "Sales AE":
+    chips_row([("On-time ↑", "success"), ("Inventory risks: 3", "warn"), ("Downtime 1.2h", "neutral")])
+elif persona == "Supply Chain Manager":
+    chips_row([("Late POs: 2", "warn"), ("Inventory risks: 3", "neutral"), ("ASN slippage: 1", "neutral")])
+else:  # Plant
+    chips_row([("OEE 78%", "success"), ("Top downtime: Changeover", "neutral"), ("Defect rate 0.9%", "neutral")])
 
 # ---------------------------------------------------------------------
 # Session state
@@ -60,36 +74,71 @@ def add_task(persona_label, kind, title, details=""):
     })
 
 # ---------------------------------------------------------------------
-# Intelligent nudges (brand-forward, no demo-y header buttons)
+# Persona-specific Intelligent nudges (offline)
 # ---------------------------------------------------------------------
 with st.expander("🔔 Intelligent nudges", expanded=True):
-    # Sales nudges example (shown regardless; feel free to branch by persona)
-    col1, col2 = st.columns([5, 1])
-    with col1:
-        st.markdown("**Cross-sell opportunity**  \nCustomers who buy **ASSY-100** often add **KIT-19**. Offer a 5% bundle discount.")
-    with col2:
-        if st.button("Accept", key="nudge_xsell"):
-            msg = "Cross-sell task created for ASSY-100 → propose KIT-19 with 5% bundle discount."
-            assistant(f"✅ {msg}")
-            add_task("Sales AE", "Propose", "Bundle ASSY-100 + KIT-19", "Offer 5% discount")
+    if persona == "Sales AE":
+        # Cross-sell
+        c1, c2 = st.columns([5, 1])
+        with c1:
+            st.markdown("**Cross-sell opportunity**  \nCustomers who buy **ASSY-100** often add **KIT-19**. Offer a 5% bundle discount.")
+        with c2:
+            if st.button("Accept", key="nudge_xsell"):
+                assistant("✅ Cross-sell task: propose KIT-19 bundle (5%) for ASSY-100 quotes.")
+                add_task("Sales AE", "Propose", "Bundle ASSY-100 + KIT-19", "Offer 5% discount")
+        # Margin guard
+        c1, c2 = st.columns([5, 1])
+        with c1:
+            st.markdown("**Margin guard**  \nRecent quotes for **ASSY-100** fell below 20% margin. Propose price = cost × **1.22**.")
+        with c2:
+            if st.button("Accept", key="nudge_margin"):
+                assistant("✅ Margin guard set: ASSY-100 price floor = cost × 1.22.")
+                add_task("Sales AE", "Guardrail", "Margin floor", "cost × 1.22")
 
-    col1, col2 = st.columns([5, 1])
-    with col1:
-        st.markdown("**Margin guard**  \nRecent quotes for **ASSY-100** fell below 20% margin. Propose price = cost × **1.22**.")
-    with col2:
-        if st.button("Accept", key="nudge_margin"):
-            msg = "Margin guard applied to ASSY-100: price floor set to cost × 1.22 for next quotes."
-            assistant(f"✅ {msg}")
-            add_task("Sales AE", "Guardrail", "Margin floor", "cost × 1.22")
+    elif persona == "Supply Chain Manager":
+        # Expedite PO
+        c1, c2 = st.columns([5, 1])
+        with c1:
+            st.markdown("**Expedite inbound PO**  \n**SKU-19** at risk. Pull in PO-104 by **2 days**.")
+        with c2:
+            if st.button("Accept", key="nudge_expedite"):
+                assistant(sc_expedite_po(sku="SKU-19", days_pull=2))
+                add_task("Supply Chain Manager", "PO", "Expedited PO", "SKU-19, ETA -2d")
+        # Alternate supplier
+        c1, c2 = st.columns([5, 1])
+        with c1:
+            st.markdown("**Alternate supplier**  \nQualify **SUP-22** for **SKU-19** (500 pcs) to hedge risk.")
+        with c2:
+            if st.button("Accept", key="nudge_alt"):
+                assistant(sc_alternate_supplier(sku="SKU-19", qty=500))
+                add_task("Supply Chain Manager", "Supplier", "Alternate supplier", "SKU-19, 500 pcs")
 
-# Optional storyline banner (kept minimal; no header buttons)
+    else:  # Plant Manager
+        # Re-sequence
+        c1, c2 = st.columns([5, 1])
+        with c1:
+            st.markdown("**Re-sequence line**  \nMove urgent **ASSY-100** lot to the front of **L2** after current batch.")
+        with c2:
+            if st.button("Accept", key="nudge_reseq"):
+                assistant(plant_resequence("L2"))
+                add_task("Plant Manager", "Scheduling", "Re-sequenced L2")
+        # QA fast-track
+        c1, c2 = st.columns([5, 1])
+        with c1:
+            st.markdown("**QA fast-track**  \nPrioritize inspection for **SKU-19** lots to unblock shipment.")
+        with c2:
+            if st.button("Accept", key="nudge_qaft"):
+                assistant(plant_qa_fast_track("SKU-19"))
+                add_task("Plant Manager", "Quality", "QA fast-track", "SKU-19")
+
+# Compact storyline preview (optional)
 sc = st.session_state.scenario
 if sc and sc.get("events"):
     i = max(0, min(st.session_state.script_idx, len(sc["events"]) - 1))
     ev = sc["events"][i]
     st.caption(f"Storyline • {ev.get('t','T-0')} • {ev.get('dept','')} — {ev.get('msg','')}")
 
-# Expose quote artifact download if present
+# Quote artifact download if present
 if st.session_state.last_quote:
     q = st.session_state.last_quote
     st.download_button(
@@ -102,7 +151,7 @@ if st.session_state.last_quote:
 st.divider()
 
 # ---------------------------------------------------------------------
-# Chat transcript (bubbles)
+# Transcript
 # ---------------------------------------------------------------------
 for m in st.session_state.chats[persona]:
     css_class = "chat-user" if m["role"] == "user" else "chat-assist"
@@ -110,29 +159,27 @@ for m in st.session_state.chats[persona]:
         st.markdown(f"<div class='chat-bubble {css_class}'>{m['content']}</div>", unsafe_allow_html=True)
 
 # ---------------------------------------------------------------------
-# Sidebar — Overview + Recent tasks + persona actions
+# Sidebar — Overview + Recent tasks + Persona workspaces
 # ---------------------------------------------------------------------
 st.sidebar.markdown("### Overview")
-ov1, ov2, ov3 = st.sidebar.columns(3)
-ov1.metric("Open", 12); ov2.metric("Win", "38%"); ov3.metric("Cycle", "3.8d")
+c1, c2, c3 = st.sidebar.columns(3)
+c1.metric("Open", 12); c2.metric("Win", "38%"); c3.metric("Cycle", "3.8d")
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("Quick Actions")
+
 with st.sidebar.expander("Recent tasks", expanded=True):
     for t in st.session_state.tasks[-10:][::-1]:
         tail = f" — {t['details']}" if t.get('details') else ""
         st.write(f"✅ {t['ts']} • {t['persona']} • {t['kind']} • {t['title']}{tail}")
 
-# small, sensible reset only in sidebar
 if st.sidebar.button("Reset conversation"):
     st.session_state.chats[persona] = []
     st.session_state.tasks = []
     st.session_state.last_quote = None
     assistant("Conversation reset.")
 
-API_URL = os.environ.get("MFG_API_URL", "http://localhost:8000")
-
-# Persona quick actions (offline-first)
+# Persona workspaces (offline-first)
 if persona == "Sales AE":
     st.sidebar.caption("Sales workspace")
     with st.sidebar.expander("Quote from BOM", expanded=True):
@@ -147,11 +194,11 @@ if persona == "Sales AE":
                     roll = res["rollup"]; price = roll["base_cost"] * (1 + margin/100.0)
                     res["body"] = res["body"].replace("Price:", f"Price: **${price:,.2f}**  (margin {margin}%)\n- ")
                 assistant(res["body"])
-                add_task("Sales AE", "Quote", f"{a.upper()} x{int(q)}", res["quote_id"])
                 st.session_state.last_quote = {
                     "id": res["quote_id"],
                     "md": f"# Quote {res['quote_id']}\n\n{res['body']}\n\n---\n*Generated by Manufacturing AI Assist.*\n"
                 }
+                add_task("Sales AE", "Quote", f"{a.upper()} x{int(q)}", res["quote_id"])
             except Exception as e:
                 assistant(f"Could not create quote: {e}")
 
@@ -167,34 +214,33 @@ if persona == "Sales AE":
     with st.sidebar.expander("Propose related product", expanded=False):
         src = st.text_input("Based on assembly", value="ASSY-100", key="prop_src")
         if st.button("Suggest Cross-sell", use_container_width=True):
-            suggestion = propose_new_product(src.upper())
-            assistant(suggestion)
+            assistant(propose_new_product(src.upper()))
             add_task("Sales AE", "Propose", f"Cross-sell for {src.upper()}")
 
 elif persona == "Supply Chain Manager":
     if st.sidebar.button("Create expedited PO"):
-        msg = sc_expedite_po() if not simapi.api_up() else simapi.post_action("Create expedited PO")
-        assistant(msg); add_task("Supply Chain Manager", "PO", "Expedited PO")
+        assistant(sc_expedite_po())
+        add_task("Supply Chain Manager", "PO", "Expedited PO")
     if st.sidebar.button("Alternate supplier"):
-        msg = sc_alternate_supplier() if not simapi.api_up() else simapi.post_action("Trigger alternate supplier")
-        assistant(msg); add_task("Supply Chain Manager", "Supplier", "Alternate supplier")
+        assistant(sc_alternate_supplier())
+        add_task("Supply Chain Manager", "Supplier", "Alternate supplier")
     if st.sidebar.button("Upgrade carrier to air"):
-        msg = sc_upgrade_carrier() if not simapi.api_up() else simapi.post_action("Upgrade carrier to air")
-        assistant(msg); add_task("Supply Chain Manager", "Logistics", "Upgrade carrier to air")
+        assistant(sc_upgrade_carrier())
+        add_task("Supply Chain Manager", "Logistics", "Upgrade carrier to air")
 
 else:  # Plant Manager
     if st.sidebar.button("Re-sequence L2"):
-        msg = plant_resequence("L2") if not simapi.api_up() else simapi.post_action("Re-sequence L2")
-        assistant(msg); add_task("Plant Manager", "Scheduling", "Re-sequenced L2")
+        assistant(plant_resequence("L2"))
+        add_task("Plant Manager", "Scheduling", "Re-sequenced L2")
     if st.sidebar.button("Batch changeovers"):
-        msg = plant_batch_changeovers("L2") if not simapi.api_up() else simapi.post_action("Batch changeovers")
-        assistant(msg); add_task("Plant Manager", "Ops", "Batched changeovers")
+        assistant(plant_batch_changeovers("L2"))
+        add_task("Plant Manager", "Ops", "Batched changeovers")
     if st.sidebar.button("QA fast-track"):
-        msg = plant_qa_fast_track("SKU-19") if not simapi.api_up() else simapi.post_action("QA fast-track")
-        assistant(msg); add_task("Plant Manager", "Quality", "QA fast-track")
+        assistant(plant_qa_fast_track("SKU-19"))
+        add_task("Plant Manager", "Quality", "QA fast-track")
 
 # ---------------------------------------------------------------------
-# Natural-language triggers (unchanged)
+# Natural-language triggers
 # ---------------------------------------------------------------------
 def _int_in(text, default=None):
     m = re.search(r"\b(\d{1,5})\b", text)
@@ -236,11 +282,11 @@ if prompt:
             try:
                 res = generate_quote(assy, qty)
                 assistant(res["body"])
-                add_task("Sales AE", "Quote", f"{assy} x{qty}", res["quote_id"])
                 st.session_state.last_quote = {
                     "id": res["quote_id"],
                     "md": f"# Quote {res['quote_id']}\n\n{res['body']}\n\n---\n*Generated by Manufacturing AI Assist.*\n"
                 }
+                add_task("Sales AE", "Quote", f"{assy} x{qty}", res["quote_id"])
             except Exception as e:
                 assistant(f"Could not create quote: {e}")
         else:
@@ -257,34 +303,34 @@ if prompt:
         sku = (re.search(r"(sku[- ]?\d+)", low) or re.search(r"(assy[- ]?\d+)", low) or re.search(r"(comp[- ]?\d+)", low))
         sku = sku.group(1).upper() if sku else "SKU-19"
         days = _int_in(low, default=2)
-        msg = sc_expedite_po(sku=sku, days_pull=days)
-        assistant(msg); add_task("Supply Chain Manager", "PO", "Expedited PO", f"{sku}, ETA -{days}d")
+        assistant(sc_expedite_po(sku=sku, days_pull=days))
+        add_task("Supply Chain Manager", "PO", "Expedited PO", f"{sku}, ETA -{days}d")
     elif "alternate supplier" in low or "alt supplier" in low:
         sku = (re.search(r"(sku[- ]?\d+)", low) or re.search(r"(assy[- ]?\d+)", low))
         sku = sku.group(1).upper() if sku else "SKU-19"
         qty = _int_in(low, default=500)
-        msg = sc_alternate_supplier(sku=sku, qty=qty)
-        assistant(msg); add_task("Supply Chain Manager", "Supplier", "Alternate supplier", f"{sku}, {qty} pcs")
+        assistant(sc_alternate_supplier(sku=sku, qty=qty))
+        add_task("Supply Chain Manager", "Supplier", "Alternate supplier", f"{sku}, {qty} pcs")
     elif "upgrade carrier" in low or ("carrier" in low and "air" in low):
-        msg = sc_upgrade_carrier()
-        assistant(msg); add_task("Supply Chain Manager", "Logistics", "Upgrade carrier to air")
+        assistant(sc_upgrade_carrier())
+        add_task("Supply Chain Manager", "Logistics", "Upgrade carrier to air")
 
     # Plant NL
     elif "re-sequence" in low or "resequence" in low:
         line = (re.search(r"(l\d)", low) or re.search(r"line[- ]?(l?\d)", low))
         line = line.group(1).upper() if line else "L2"
-        msg = plant_resequence(line)
-        assistant(msg); add_task("Plant Manager", "Scheduling", f"Re-sequenced {line}")
+        assistant(plant_resequence(line))
+        add_task("Plant Manager", "Scheduling", f"Re-sequenced {line}")
     elif "batch changeover" in low or "batch changeovers" in low:
         line = (re.search(r"(l\d)", low) or re.search(r"line[- ]?(l?\d)", low))
         line = line.group(1).upper() if line else "L2"
-        msg = plant_batch_changeovers(line)
-        assistant(msg); add_task("Plant Manager", "Ops", f"Batched changeovers {line}")
+        assistant(plant_batch_changeovers(line))
+        add_task("Plant Manager", "Ops", f"Batched changeovers {line}")
     elif "qa fast" in low or "fast-track" in low or "fast track" in low:
         sku = (re.search(r"(sku[- ]?\d+)", low) or re.search(r"(assy[- ]?\d+)", low))
         sku = sku.group(1).upper() if sku else "SKU-19"
-        msg = plant_qa_fast_track(sku)
-        assistant(msg); add_task("Plant Manager", "Quality", "QA fast-track", sku)
+        assistant(plant_qa_fast_track(sku))
+        add_task("Plant Manager", "Quality", "QA fast-track", sku)
 
     else:
         assistant("Acknowledged.")
