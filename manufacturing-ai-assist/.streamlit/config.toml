@@ -1,0 +1,6 @@
+[theme]
+primaryColor = "#FF7A1A"           # Saxon orange
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#F6F8FB"
+textColor = "#17223B"               # Saxon navy
+font = "Inter"
