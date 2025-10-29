@@ -1,6 +1,11 @@
+# .streamlit/config.toml
 [theme]
-primaryColor = "#FF7A1A"           # Saxon orange
-backgroundColor = "#ffffff"
-secondaryBackgroundColor = "#F6F8FB"
-textColor = "#17223B"               # Saxon navy
-font = "Inter"
+base="light"
+primaryColor="#FF7A18"         # Saxon orange
+backgroundColor="#FAF8F5"      # warm neutral background
+secondaryBackgroundColor="#FFFFFF"
+textColor="#17223B"            # deep navy text
+font="sans serif"              # Streamlit system sans
+
+[client]
+showSidebarNavigation = true
