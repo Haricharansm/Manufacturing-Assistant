@@ -1,0 +1,32 @@
+/* Layout */
+.main .block-container { padding-top: 1.2rem; padding-bottom: 2.5rem; }
+
+/* Topbar */
+.saxon-topbar { display:flex; align-items:center; gap:14px; margin: 0 0 12px 0; }
+.saxon-title   { font-size:32px; font-weight:800; letter-spacing:.2px; margin:0; color:#17223B; }
+.saxon-subtle  { color:#5B677D; font-weight:500; }
+
+/* Card */
+.card {
+  background:#fff; border:1px solid #e9edf5; border-radius:14px; padding:14px 16px;
+  box-shadow: 0 1px 2px rgba(23,34,59,.05);
+}
+
+/* Chips / badges */
+.chips { display:flex; flex-wrap:wrap; gap:8px; }
+.chip {
+  display:inline-flex; align-items:center; gap:8px; padding:6px 10px; border-radius:999px;
+  background:#f2f5fb; color:#17223B; border:1px solid #e6ebf5; font-weight:600; font-size:.85rem;
+}
+.chip .dot { width:8px; height:8px; border-radius:50%; background:#9AA4B2; }
+.chip.success .dot { background:#0aa35f; }
+.chip.warn .dot    { background:#e1a500; }
+.chip.danger .dot  { background:#d72638; }
+
+/* Chat bubbles */
+.chat-bubble { border-radius:14px; padding:12px 14px; margin:6px 0; }
+.chat-user   { background:#e9f2ff; border:1px solid #d8e8ff; }
+.chat-assist { background:#fff;    border:1px solid #e9edf5; }
+
+/* Caption */
+.caption { color:#6b7280; font-size:.9rem; }
