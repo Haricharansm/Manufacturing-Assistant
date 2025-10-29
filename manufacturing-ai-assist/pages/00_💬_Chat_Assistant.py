@@ -14,6 +14,35 @@ from utils.ops_offline import (
     plant_resequence, plant_batch_changeovers, plant_qa_fast_track
 )
 
+# Optional modules (nudges/search); fall back to simple stubs if missing
+try:
+    from utils.nudges import sales_nudges, sc_nudges, plant_nudges
+except Exception:
+    def sales_nudges(df_orders, df_inv):
+        return [
+            {"title":"Cross-sell opportunity",
+             "body":"Customers who buy **ASSY-100** also add **KIT-19**. Offer a 5% bundle.",
+             "action":{"type":"propose_xsell","assembly":"ASSY-100"}}
+        ]
+    def sc_nudges(df_inv):
+        return [
+            {"title":"Late ASNs detected","body":"Suggest **upgrade to air** for critical parts.",
+             "action":{"type":"sc_upgrade_carrier"}}
+        ]
+    def plant_nudges(df_down, df_quality):
+        return [
+            {"title":"Changeovers driving downtime",
+             "body":"Recommend **batch changeovers** and **re-sequence L2**.",
+             "action":{"type":"plant_batch_changeovers","line":"L2"}}
+        ]
+
+try:
+    from utils.search import search_sales, search_sc, search_plant
+except Exception:
+    def search_sales(q, dfs):  return ("Sales search", dfs["orders"].head(50))
+    def search_sc(q, dfs):     return ("Supply chain search", dfs["inv"].head(50))
+    def search_plant(q, dfs):  return ("Plant search", dfs["down"].head(50))
+
 # ---------------------------------------------------------------------
 # Page config
 # ---------------------------------------------------------------------
@@ -60,6 +89,54 @@ def add_task(persona_label, kind, title, details=""):
     })
 
 # ---------------------------------------------------------------------
+# Data helpers (for nudges/search) + Persona KPI strip
+# ---------------------------------------------------------------------
+def _load_demo_dfs():
+    df_orders, df_quality, df_down, df_inv, df_wos = load_all_data()
+    return {"orders": df_orders, "quality": df_quality, "down": df_down, "inv": df_inv, "wos": df_wos}
+
+def _metrics_or_defaults():
+    if simapi.api_up():
+        m = simapi.get_metrics() or {}
+        return {
+            "open_quotes": m.get("open_quotes", 12),
+            "win_rate": m.get("win_rate_30d", 38),
+            "avg_cycle": m.get("avg_cycle_days", 3.8),
+            "inv_risks": m.get("inventory_risk_count", 3),
+            "late_asn": m.get("late_asn_count", 2),
+            "lead_time": m.get("avg_inbound_lead_days", 5.4),
+            "throughput": m.get("throughput_per_day", 240),
+            "downtime": m.get("downtime_hours", 1.2),
+            "yield_pct": m.get("first_pass_yield_pct", 98.3),
+        }
+    return {
+        "open_quotes": 12, "win_rate": 38, "avg_cycle": 3.8,
+        "inv_risks": 3, "late_asn": 2, "lead_time": 5.4,
+        "throughput": 240, "downtime": 1.2, "yield_pct": 98.3,
+    }
+
+def render_persona_kpis(selected):
+    m = _metrics_or_defaults()
+    st.sidebar.markdown("### Overview")
+    if selected == "Sales AE":
+        c1,c2,c3 = st.sidebar.columns(3)
+        c1.metric("Open", m["open_quotes"])
+        c2.metric("Win", f"{m['win_rate']}%")
+        c3.metric("Cycle", f"{float(m['avg_cycle']):.1f}d")
+    elif selected == "Supply Chain Manager":
+        c1,c2,c3 = st.sidebar.columns(3)
+        c1.metric("Risks", m["inv_risks"])
+        c2.metric("Late ASN", m["late_asn"])
+        c3.metric("Lead", f"{float(m['lead_time']):.1f}d")
+    else:
+        c1,c2,c3 = st.sidebar.columns(3)
+        c1.metric("TPD", int(m["throughput"]))
+        c2.metric("Down", f"{float(m['downtime']):.1f}h")
+        c3.metric("FPY", f"{float(m['yield_pct']):.1f}%")
+
+render_persona_kpis(persona)
+
+# ---------------------------------------------------------------------
 # Helpers: Scenario banner + Quote artifact markdown
 # ---------------------------------------------------------------------
 def scenario_banner():
@@ -67,7 +144,6 @@ def scenario_banner():
     i = st.session_state.get("script_idx", 0)
     if not sc or not sc.get("events"):
         return
-    # if stepped, show last executed; else preview first
     idx = max(0, min(i - 1, len(sc["events"]) - 1))
     ev = sc["events"][idx]
     phase = ev.get("t", "T-0")
@@ -123,11 +199,14 @@ if colB.button("Reset"):
 
 def _run_story_action(action, params):
     if action == "sales_quote":
-        res = generate_quote(params.get("assembly", "ASSY-100"), int(params.get("qty", 25)), prospect=params.get("prospect", "ACME Mfg"))
-        assistant(res["body"])
-        add_task("Sales AE", "Quote", f"{params.get('assembly','ASSY-100')} x{int(params.get('qty',25))}", res["quote_id"])
-        # artifact
-        st.session_state.last_quote = {"id": res["quote_id"], "md": _quote_markdown(res["body"], res["quote_id"])}
+        with st.status("Generating quote…", expanded=False) as s:
+            res = generate_quote(params.get("assembly", "ASSY-100"), int(params.get("qty", 25)),
+                                 prospect=params.get("prospect", "ACME Mfg"))
+            assistant(res["body"])
+            add_task("Sales AE", "Quote",
+                     f"{params.get('assembly','ASSY-100')} x{int(params.get('qty',25))}", res["quote_id"])
+            st.session_state.last_quote = {"id": res["quote_id"], "md": _quote_markdown(res["body"], res["quote_id"])}
+            s.update(label="Quote ready", state="complete")
     elif action == "sc_expedite_po":
         msg = sc_expedite_po()
         assistant(msg); add_task("Supply Chain Manager", "PO", "Expedited PO", "SKU-19, ETA -2d")
@@ -177,6 +256,44 @@ if st.session_state.last_quote:
 st.divider()
 
 # ---------------------------------------------------------------------
+# Intelligent Nudges (role-aware)
+# ---------------------------------------------------------------------
+dfs = _load_demo_dfs()
+with st.expander("🔔 Intelligent nudges", expanded=True):
+    if persona == "Sales AE":
+        cards = sales_nudges(dfs["orders"], dfs["inv"])
+    elif persona == "Supply Chain Manager":
+        cards = sc_nudges(dfs["inv"])
+    else:
+        cards = plant_nudges(dfs["down"], dfs["quality"])
+
+    for i, c in enumerate(cards, start=1):
+        cols = st.columns([6, 2])
+        cols[0].markdown(f"**{c['title']}**  \n{c['body']}")
+        if cols[1].button("Accept", key=f"nudge_{i}"):
+            a = c.get("action", {}); t = a.get("type")
+            if t == "follow_up":
+                msg = follow_up_email(a.get("account", "ACME Mfg"), "Q-XXXX", tone="warm")
+                assistant(f"**Draft email:**\n\n{msg}")
+                add_task("Sales AE", "Follow-up", a.get("account","ACME Mfg"), "Q-XXXX")
+            elif t == "propose_xsell":
+                assistant(propose_new_product(a.get("assembly","ASSY-100")))
+                add_task("Sales AE", "Propose", f"Cross-sell for {a.get('assembly','ASSY-100')}")
+            elif t == "open_quote_wizard":
+                assistant("Opening quote wizard with prefilled values…")
+            elif t == "sc_expedite_po":
+                msg = sc_expedite_po(a.get("sku","SKU-19"), a.get("days_pull",2))
+                assistant(msg); add_task("Supply Chain Manager","PO","Expedited PO", f"{a.get('sku','SKU-19')}, ETA -{a.get('days_pull',2)}d")
+            elif t == "sc_upgrade_carrier":
+                msg = sc_upgrade_carrier(); assistant(msg); add_task("Supply Chain Manager","Logistics","Upgrade carrier to air")
+            elif t == "plant_batch_changeovers":
+                msg = plant_batch_changeovers(a.get("line","L2")); assistant(msg); add_task("Plant Manager","Ops","Batched changeovers")
+            elif t == "plant_qa_fast_track":
+                msg = plant_qa_fast_track(a.get("sku","SKU-19")); assistant(msg); add_task("Plant Manager","Quality","QA fast-track", a.get("sku","SKU-19"))
+            else:
+                assistant("Action recorded.")
+
+# ---------------------------------------------------------------------
 # Chat transcript (bubbles)
 # ---------------------------------------------------------------------
 for m in st.session_state.chats[persona]:
@@ -185,15 +302,25 @@ for m in st.session_state.chats[persona]:
         st.markdown(f"<div class='chat-bubble {css_class}'>{m['content']}</div>", unsafe_allow_html=True)
 
 # ---------------------------------------------------------------------
-# Sidebar — Recent tasks + persona actions
+# Sidebar — Recent tasks + persona actions + search
 # ---------------------------------------------------------------------
 st.sidebar.markdown("---")
 st.sidebar.subheader("Quick Actions")
 
 with st.sidebar.expander("Recent tasks", expanded=True):
-    for t in st.session_state.tasks[-10:][::-1]:
+    rows = st.session_state.tasks[-50:][::-1]
+    for t in rows:
         tail = f" — {t['details']}" if t.get('details') else ""
         st.write(f"✅ {t['ts']} • {t['persona']} • {t['kind']} • {t['title']}{tail}")
+    if rows:
+        df_tasks = pd.DataFrame(rows)
+        st.download_button(
+            "⬇️ Export tasks (CSV)",
+            data=df_tasks.to_csv(index=False).encode("utf-8"),
+            file_name="recent_tasks.csv",
+            mime="text/csv",
+            use_container_width=True,
+        )
 
 API_URL = os.environ.get("MFG_API_URL", "http://localhost:8000")
 
@@ -202,20 +329,21 @@ if persona == "Sales AE":
     st.sidebar.caption("Sales workspace (offline)")
     with st.sidebar.expander("Quote from BOM", expanded=True):
         a = st.text_input("Assembly", value="ASSY-100")
-        q = st.number_input("Qty", min_value=1, step=5, value=25)
+        qn = st.number_input("Qty", min_value=1, step=5, value=25)
         margin = st.slider("Margin %", 5, 40, 22)
         prospect = st.text_input("Prospect", value="ACME Mfg")
         if st.button("Create Quote", use_container_width=True):
             try:
-                res = generate_quote(a.upper(), int(q), prospect=prospect)
-                if margin != 22:
-                    roll = res["rollup"]
-                    price = roll["base_cost"] * (1 + margin / 100.0)
-                    res["body"] = res["body"].replace("Price:", f"Price: **${price:,.2f}**  (margin {margin}%)\n- ")
-                assistant(res["body"])
-                add_task("Sales AE", "Quote", f"{a.upper()} x{int(q)}", res["quote_id"])
-                # artifact for download
-                st.session_state.last_quote = {"id": res["quote_id"], "md": _quote_markdown(res["body"], res["quote_id"])}
+                with st.status("Generating quote…", expanded=False) as s:
+                    res = generate_quote(a.upper(), int(qn), prospect=prospect)
+                    if margin != 22:
+                        roll = res["rollup"]
+                        price = roll["base_cost"] * (1 + margin / 100.0)
+                        res["body"] = res["body"].replace("Price:", f"Price: **${price:,.2f}**  (margin {margin}%)\n- ")
+                    assistant(res["body"])
+                    add_task("Sales AE", "Quote", f"{a.upper()} x{int(qn)}", res["quote_id"])
+                    st.session_state.last_quote = {"id": res["quote_id"], "md": _quote_markdown(res["body"], res["quote_id"])}
+                    s.update(label="Quote ready", state="complete")
             except Exception as e:
                 assistant(f"Could not create quote: {e}")
 
@@ -256,6 +384,21 @@ else:  # Plant Manager
     if st.sidebar.button("QA fast-track"):
         msg = plant_qa_fast_track("SKU-19") if not simapi.api_up() else simapi.post_action("QA fast-track")
         assistant(msg); add_task("Plant Manager", "Quality", "QA fast-track")
+
+# Sidebar search (by function)
+st.sidebar.markdown("---")
+st.sidebar.subheader("Search")
+_query = st.sidebar.text_input("Ask by function", placeholder="e.g., quotes for ACME / inventory SKU-19 / downtime by line")
+if _query:
+    title, table = ("", None)
+    if persona == "Sales AE":
+        title, table = search_sales(_query, dfs)
+    elif persona == "Supply Chain Manager":
+        title, table = search_sc(_query, dfs)
+    else:
+        title, table = search_plant(_query, dfs)
+    st.sidebar.caption(title)
+    st.sidebar.dataframe(table, height=220, use_container_width=True)
 
 # ---------------------------------------------------------------------
 # Natural-language triggers
@@ -298,10 +441,12 @@ if prompt:
         if m:
             assy, qty = m.group(1).upper(), int(m.group(2))
             try:
-                res = generate_quote(assy, qty)
-                assistant(res["body"])
-                add_task("Sales AE", "Quote", f"{assy} x{qty}", res["quote_id"])
-                st.session_state.last_quote = {"id": res["quote_id"], "md": _quote_markdown(res["body"], res["quote_id"])}
+                with st.status("Generating quote…", expanded=False) as s:
+                    res = generate_quote(assy, qty)
+                    assistant(res["body"])
+                    add_task("Sales AE", "Quote", f"{assy} x{qty}", res["quote_id"])
+                    st.session_state.last_quote = {"id": res["quote_id"], "md": _quote_markdown(res["body"], res["quote_id"])}
+                    s.update(label="Quote ready", state="complete")
             except Exception as e:
                 assistant(f"Could not create quote: {e}")
         else:
